@@ -22,19 +22,11 @@ function AppShell() {
         const tg = initTelegramApp()
         document.documentElement.dataset.tg = tg ? '1' : '0'
 
-        // если theme = auto — реагируем на смену темы Telegram
-        const applyAuto = () => {
-            if (useSettingsStore.getState().theme !== 'auto') return
-            const scheme = getTelegramColorScheme() || 'light'
-            document.documentElement.dataset.theme = scheme
-        }
-
-        const w = window.Telegram?.WebApp
-        if (w?.onEvent) w.onEvent('themeChanged', applyAuto)
-        applyAuto()
-
-        return () => {
-            if (w?.offEvent) w.offEvent('themeChanged', applyAuto)
+        if (tg) {
+            setTimeout(() => tg.expand(), 50)
+            tg.onEvent?.('viewportChanged', () => {
+                if (!tg.isExpanded) tg.expand()
+            })
         }
     }, [])
 

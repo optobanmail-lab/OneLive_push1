@@ -9,31 +9,19 @@ export function getTelegramWebApp() {
 }
 
 export function initTelegramApp() {
-    const tg = getTelegramWebApp()
-
-    // для стилей (blur только в tg)
-    document.documentElement.dataset.tg = tg ? '1' : '0'
-
+    const tg = window.Telegram?.WebApp
     if (!tg) return null
 
-    try {
-        tg.ready()
+    tg.ready()
 
-        // просим раскрыть webapp на максимум
-        tg.expand()
-        setTimeout(() => tg.expand(), 150)
+    // раскрыть на весь экран (то, что ты хочешь)
+    tg.expand()
 
-        // чтобы не “съезжало” свайпом вниз (доступно не во всех версиях)
-        tg.disableVerticalSwipes?.()
+    // чтобы свайп вниз не сворачивал обратно (по желанию)
+    tg.disableVerticalSwipes?.()
 
-        // если Telegram меняет высоту — снова expand
-        const onViewport = () => {
-            if (!tg.isExpanded) tg.expand()
-        }
-        tg.onEvent?.('viewportChanged', onViewport)
-    } catch {
-        // ignore
-    }
+    // если поддерживается (не везде): настоящий fullscreen
+    tg.requestFullscreen?.()
 
     return tg
 }
