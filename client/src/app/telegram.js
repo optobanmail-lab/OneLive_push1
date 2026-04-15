@@ -3,15 +3,13 @@ export function getTelegramWebApp() {
 }
 
 export function getTelegramUser() {
-    // Важно: initDataUnsafe нельзя “доверять” для безопасности,
-    // но для курсового/локального хранения это норм.
     const tg = getTelegramWebApp()
     return tg?.initDataUnsafe?.user || null
 }
 
 export function getTelegramColorScheme() {
     const tg = getTelegramWebApp()
-    return tg?.colorScheme || null // 'light' | 'dark' | null
+    return tg?.colorScheme || null
 }
 
 function safeCall(fn) {
@@ -23,18 +21,37 @@ function safeCall(fn) {
     }
 }
 
+function applyViewportVars(tg) {
+    if (!tg) return
+    // Telegram рекомендует обновлять viewportHeight в CSS-переменную
+    const h = tg.viewportHeight
+    if (h) document.documentElement.style.setProperty('--tg-viewport-height', `${h}px`)
+}
+
 export function initTelegramApp() {
     const tg = getTelegramWebApp()
-    if (!tg) return null
+    if (!tg) {
+        document.documentElement.dataset.tg = '0'
+        return null
+    }
+
+    document.documentElement.dataset.tg = '1'
 
     safeCall(() => tg.ready())
     safeCall(() => tg.expand())
 
-    // На версии 6.0 requestFullscreen / disableVerticalSwipes могут быть unsupported.
-    // Важно не падать:
-    safeCall(() => tg.disableVerticalSwipes?.())
-    // safeCall(() => tg.requestFullscreen?.()) // НЕ надо: может бросать ошибку
+    // выставим высоту сразу
+    applyViewportVars(tg)
 
+    // и обновляем при изменениях (клавиатура, сворачивание, и т.д.)
+    safeCall(() =>
+        tg.onEvent?.('viewportChanged', () => {
+            applyViewportVars(tg)
+            if (!tg.isExpanded) safeCall(() => tg.expand())
+        })
+    )
+
+    // НЕ вызываем requestFullscreen/disableVerticalSwipes — на v6.0 они могут кидать ошибку
     return tg
 }
 

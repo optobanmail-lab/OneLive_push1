@@ -50,7 +50,10 @@ function AppShell() {
     }
 
     return (
-        <div className="app-bg min-h-[100dvh]">
+        <div
+            className="app-bg"
+            style={{ minHeight: 'var(--tg-viewport-height, 100dvh)' }}
+        >
             <div
                 className="mx-auto max-w-md px-4 tg-safe-top pt-1"
                 style={{
