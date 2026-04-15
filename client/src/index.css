@@ -96,10 +96,10 @@ html[data-theme='light'] {
 
   /* Safe top padding for Telegram header/buttons */
   .tg-safe-top {
-    padding-top: calc(14px + env(safe-area-inset-top));
+    padding-top: calc(18px + env(safe-area-inset-top));
   }
   html[data-tg='1'] .tg-safe-top {
-    padding-top: calc(28px + env(safe-area-inset-top));
+    padding-top: calc(36px + env(safe-area-inset-top));
   }
 
   .scroll-touch {

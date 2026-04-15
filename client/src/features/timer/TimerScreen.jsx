@@ -154,11 +154,20 @@ function CircularTimePicker({
     useLayoutEffect(() => {
         const el = wrapRef.current
         if (!el) return
-        const ro = new ResizeObserver(() => {
+
+        const compute = () => {
             const w = el.clientWidth
-            const next = clamp(w - 24, 210, 288)
+            const h = el.clientHeight || 0
+
+            // если высота есть — ограничиваем размер по меньшей стороне
+            const limiting = h > 0 ? Math.min(w, h) : w
+            const next = clamp(limiting - 24, 190, 288)
             setSize(next)
-        })
+        }
+
+        compute()
+
+        const ro = new ResizeObserver(() => compute())
         ro.observe(el)
         return () => ro.disconnect()
     }, [])
@@ -241,7 +250,7 @@ function CircularTimePicker({
     const label = formatHumanHM(valueSeconds)
 
     return (
-        <div ref={wrapRef} className="w-full">
+        <div ref={wrapRef} className="w-full h-full">
             <div className="mx-auto relative select-none" style={{ width: size, height: size }}>
                 <svg
                     width={size}
