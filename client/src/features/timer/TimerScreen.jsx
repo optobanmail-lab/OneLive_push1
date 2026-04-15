@@ -38,11 +38,13 @@ function pointToAngleDeg(x, y, cx, cy) {
     if (deg < 0) deg += 360
     return deg
 }
+
 function secondsToAngleDeg(seconds, minSeconds, maxSeconds) {
     const t = clamp(seconds, minSeconds, maxSeconds)
     const ratio = (t - minSeconds) / (maxSeconds - minSeconds || 1)
     return ratio * 360
 }
+
 function angleDegToSeconds(angleDeg, minSeconds, maxSeconds, stepSeconds) {
     const ratio = clamp(angleDeg, 0, 360) / 360
     const raw = minSeconds + ratio * (maxSeconds - minSeconds)
@@ -109,7 +111,12 @@ function PresetRowCompact({ title, subtitle, active, onClick }) {
         >
             <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                    <div className={['text-sm font-semibold leading-none truncate', active ? 'text-white' : 'text-text'].join(' ')}>
+                    <div
+                        className={[
+                            'text-sm font-semibold leading-none truncate',
+                            active ? 'text-white' : 'text-text',
+                        ].join(' ')}
+                    >
                         {title}
                     </div>
                     <div className={['mt-1 text-[11px]', active ? 'text-white/80' : 'text-muted'].join(' ')}>
@@ -151,18 +158,26 @@ function CircularTimePicker({
     const [dragging, setDragging] = useState(false)
     const [size, setSize] = useState(248)
 
+    // ✅ Размер считается по ширине И высоте контейнера (чтобы круг помещался)
     useLayoutEffect(() => {
         const el = wrapRef.current
         if (!el) return
-        const ro = new ResizeObserver(() => {
+
+        const compute = () => {
             const w = el.clientWidth
-            const next = clamp(w - 24, 210, 288)
+            const h = el.clientHeight || 0
+            const limiting = h > 0 ? Math.min(w, h) : w
+            const next = clamp(limiting - 32, 170, 288)
             setSize(next)
-        })
+        }
+
+        compute()
+        const ro = new ResizeObserver(() => compute())
         ro.observe(el)
         return () => ro.disconnect()
     }, [])
 
+    // блокируем прокрутку при перетаскивании
     useEffect(() => {
         if (!dragging) return
         const prevOverflow = document.body.style.overflow
@@ -241,8 +256,9 @@ function CircularTimePicker({
     const label = formatHumanHM(valueSeconds)
 
     return (
-        <div ref={wrapRef} className="w-full">
-            <div className="mx-auto relative select-none" style={{ width: size, height: size }}>
+        // ✅ Центровка круга внутри панели
+        <div ref={wrapRef} className="w-full h-full flex items-center justify-center">
+            <div className="relative select-none" style={{ width: size, height: size }}>
                 <svg
                     width={size}
                     height={size}
@@ -423,7 +439,7 @@ export default function TimerScreen() {
 
     return (
         <div className="space-y-4" style={{ paddingBottom: `calc(${bottomOffset}px + 76px + env(safe-area-inset-bottom))` }}>
-            <Header title="Таймер" />
+            <Header title="Таймер" compact />
 
             <section className="hero-card">
                 <div className="text-xs text-muted">{isRunning ? 'Сессия идёт' : 'Готов к старту'}</div>
@@ -474,7 +490,6 @@ export default function TimerScreen() {
                                 </button>
                             </div>
 
-                            {/* IMPORTANT: scroll container */}
                             <div
                                 className="flex-1 min-h-0 overflow-y-auto hide-scrollbar space-y-2 pr-1 pb-2"
                                 style={{

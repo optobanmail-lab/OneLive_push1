@@ -1,51 +1,44 @@
-export function isTelegramEnv() {
-    const ua = navigator.userAgent || ''
-    return /Telegram/i.test(ua) || typeof window.TelegramWebviewProxy !== 'undefined'
-}
-
 export function getTelegramWebApp() {
-    if (!isTelegramEnv()) return null
     return window.Telegram?.WebApp || null
 }
 
-export function initTelegramApp() {
-    const tg = window.Telegram?.WebApp
-    if (!tg) return null
-
-    tg.ready()
-
-    // раскрыть на весь экран (то, что ты хочешь)
-    tg.expand()
-
-    // чтобы свайп вниз не сворачивал обратно (по желанию)
-    tg.disableVerticalSwipes?.()
-
-    // если поддерживается (не везде): настоящий fullscreen
-    tg.requestFullscreen?.()
-
-    return tg
-}
-
 export function getTelegramUser() {
+    // Важно: initDataUnsafe нельзя “доверять” для безопасности,
+    // но для курсового/локального хранения это норм.
     const tg = getTelegramWebApp()
     return tg?.initDataUnsafe?.user || null
 }
 
 export function getTelegramColorScheme() {
     const tg = getTelegramWebApp()
-    return tg?.colorScheme || null
+    return tg?.colorScheme || null // 'light' | 'dark' | null
+}
+
+function safeCall(fn) {
+    try {
+        return fn()
+    } catch (e) {
+        console.warn('[tg] method failed:', e?.message || e)
+        return null
+    }
+}
+
+export function initTelegramApp() {
+    const tg = getTelegramWebApp()
+    if (!tg) return null
+
+    safeCall(() => tg.ready())
+    safeCall(() => tg.expand())
+
+    // На версии 6.0 requestFullscreen / disableVerticalSwipes могут быть unsupported.
+    // Важно не падать:
+    safeCall(() => tg.disableVerticalSwipes?.())
+    // safeCall(() => tg.requestFullscreen?.()) // НЕ надо: может бросать ошибку
+
+    return tg
 }
 
 export function hapticLight() {
     const tg = getTelegramWebApp()
-    try {
-        tg?.HapticFeedback?.impactOccurred?.('light')
-    } catch {}
-}
-
-export function closeTelegramApp() {
-    const tg = getTelegramWebApp()
-    try {
-        tg?.close()
-    } catch {}
+    safeCall(() => tg?.HapticFeedback?.impactOccurred?.('light'))
 }

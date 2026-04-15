@@ -1,6 +1,6 @@
-function Header({ title, subtitle = null, compact = false, right = null }) {
+function Header({ title, subtitle = null, right = null }) {
     return (
-        <div className={[compact ? 'mb-3 pt-1' : 'mb-5 pt-2'].join(' ')}>
+        <div>
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                     <h1 className="text-[28px] font-bold leading-tight text-text truncate">
