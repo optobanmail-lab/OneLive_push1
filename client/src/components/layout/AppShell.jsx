@@ -1,36 +1,58 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
-
 import BottomNav from './BottomNav.jsx'
 
 import NotesScreen from '../../features/notes/NotesScreen.jsx'
-
 import LifeScreen from '../../features/life/LifeScreen.jsx'
 import HabitsScreen from '../../features/habits/HabitsScreen.jsx'
 import TimerScreen from '../../features/timer/TimerScreen.jsx'
 import ProfileScreen from '../../features/profile/ProfileScreen.jsx'
-import SettingsScreen from '../../features/settings/SettingsScreen.jsx'
-
 import MoreScreen from '../../features/more/MoreScreen.jsx'
 
 import { getTelegramColorScheme, initTelegramApp } from '../../app/telegram.js'
-import useUserStore from '../../store/useUserStore.js'
+import useSettingsStore from '../../store/useSettingsStore.js'
+
+const BOTTOM_NAV_H = 96
 
 function AppShell() {
     const [activeTab, setActiveTab] = useState('life')
-    const theme = useUserStore((s) => s.user.theme)
+
+    const theme = useSettingsStore((s) => s.theme)
 
     useEffect(() => {
-        initTelegramApp()
+        const tg = initTelegramApp()
+        document.documentElement.dataset.tg = tg ? '1' : '0'
+
+        // если theme = auto — реагируем на смену темы Telegram
+        const applyAuto = () => {
+            if (useSettingsStore.getState().theme !== 'auto') return
+            const scheme = getTelegramColorScheme() || 'light'
+            document.documentElement.dataset.theme = scheme
+        }
+
+        const w = window.Telegram?.WebApp
+        if (w?.onEvent) w.onEvent('themeChanged', applyAuto)
+        applyAuto()
+
+        return () => {
+            if (w?.offEvent) w.offEvent('themeChanged', applyAuto)
+        }
     }, [])
 
     const resolvedTheme = useMemo(() => {
-        if (theme === 'dark' || theme === 'light') return theme
-        return getTelegramColorScheme() || 'dark'
+        if (theme === 'light' || theme === 'dark') return theme
+        return getTelegramColorScheme() || 'light'
     }, [theme])
 
     useEffect(() => {
+        // root variables = dark by default, а light включается через data-theme='light'
         document.documentElement.dataset.theme = resolvedTheme
+
+        // опционально подкрашиваем панели Telegram
+        const tg = window.Telegram?.WebApp
+        try {
+            if (tg?.setHeaderColor) tg.setHeaderColor(resolvedTheme === 'light' ? '#ffffff' : '#0b0b0d')
+            if (tg?.setBottomBarColor) tg.setBottomBarColor(resolvedTheme === 'light' ? '#ffffff' : '#0b0b0d')
+        } catch (_) {}
     }, [resolvedTheme])
 
     const renderScreen = () => {
@@ -46,25 +68,21 @@ function AppShell() {
             case 'settings':
                 return <MoreScreen />
             case 'life':
-
             default:
                 return <LifeScreen />
         }
     }
 
     return (
-        <div className="mx-auto min-h-screen max-w-md bg-bg px-4 pb-[calc(96px+env(safe-area-inset-bottom))]">
-            <AnimatePresence mode="wait" initial={false}>
-                <motion.div
-                    key={activeTab}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.18, ease: 'easeOut' }}
-                >
-                    {renderScreen()}
-                </motion.div>
-            </AnimatePresence>
+        <div className="app-bg min-h-[100dvh]">
+            <div
+                className="mx-auto max-w-md px-4 tg-safe-top"
+                style={{
+                    paddingBottom: `calc(${BOTTOM_NAV_H}px + env(safe-area-inset-bottom))`,
+                }}
+            >
+                {renderScreen()}
+            </div>
 
             <BottomNav activeTab={activeTab} onChange={setActiveTab} />
         </div>

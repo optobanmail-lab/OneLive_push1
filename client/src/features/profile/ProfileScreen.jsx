@@ -15,7 +15,7 @@ function ProfileScreen() {
         <div className="pt-4">
             <Header
                 title="Профиль"
-                subtitle="Твои данные и краткая статистика"
+
             />
 
             <Card className="mb-4">

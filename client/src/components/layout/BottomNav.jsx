@@ -6,7 +6,7 @@ const tabs = [
     { key: 'timer', label: 'Таймер', Icon: TimerIcon },
     { key: 'habits', label: 'Задачи', Icon: TasksIcon },
     { key: 'notes', label: 'Заметки', Icon: NotesIcon },
-    { key: 'settings', label: 'Ещё', Icon: MoreIcon },
+    { key: 'settings', label: 'Настройки', Icon: MoreIcon },
 ]
 
 function BottomNav({ activeTab, onChange }) {

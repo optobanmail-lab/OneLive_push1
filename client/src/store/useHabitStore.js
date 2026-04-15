@@ -2,133 +2,130 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 function getLocalDateKey(d = new Date()) {
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
     const day = String(d.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
+    return `${y}-${m}-${day}`
+}
+
+function uid() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
 const useHabitStore = create(
     persist(
         (set, get) => ({
+            // items: habits + tasks live together
             habits: [],
-            filter: 'all', // all | active | done
+            // per-day completions for HABITS only
+            completionsByDate: {}, // { 'YYYY-MM-DD': { [habitId]: true } }
 
-            // { '2026-04-08': { '123': true, '456': true } }
-            completionsByDate: {},
+            // kept for compatibility (если где-то в проекте используешь)
+            filter: 'all',
+            setFilter: (filter) => set({ filter }),
 
-            addHabit: (payload) =>
-                set((state) => {
-                    const data =
-                        typeof payload === 'string'
-                            ? { title: payload }
-                            : (payload || {})
+            addHabit: (payload) => {
+                const kind = payload?.kind === 'task' ? 'task' : 'habit'
+                const item = {
+                    id: uid(),
+                    kind,
+                    title: String(payload?.title || '').trim(),
+                    comment: String(payload?.comment || '').trim(),
+                    reminderTime: String(payload?.reminderTime || '').trim(),
+                    tag: String(payload?.tag || '').trim(),
+                    archived: false,
+                    createdAt: Date.now(),
 
-                    const title = (data.title || '').trim()
-                    if (!title) return state
+                    // IMPORTANT: tasks are persistent completion
+                    completed: kind === 'task' ? Boolean(payload?.completed) : undefined,
+                }
 
-                    return {
-                        habits: [
-                            ...state.habits,
-                            {
-                                id: String(Date.now()),
-                                kind: data.kind || 'habit',          // 'habit' | 'task'
-                                title,
-                                comment: data.comment || '',
-                                reminderTime: data.reminderTime || '',
-                                tag: data.tag || '',
-                                archived: false,
-                                createdAt: new Date().toISOString(),
-                            },
-                        ],
-                    }
-                }),
+                if (!item.title) return
 
-            editHabit: (id, newTitle) =>
-                set((state) => ({
-                    habits: state.habits.map((h) =>
-                        h.id === id ? { ...h, title: newTitle } : h
-                    ),
-                })),
+                set((s) => ({
+                    habits: [item, ...(s.habits || [])],
+                }))
+            },
 
-            deleteHabit: (id) =>
-                set((state) => {
-                    // удаляем привычку
-                    const habits = state.habits.filter((h) => h.id !== id)
+            editHabit: (id, nextTitle) => {
+                const t = String(nextTitle || '').trim()
+                if (!t) return
+                set((s) => ({
+                    habits: (s.habits || []).map((h) => (h.id === id ? { ...h, title: t } : h)),
+                }))
+            },
 
-                    // чистим отметки по дням
-                    const completionsByDate = { ...state.completionsByDate }
-                    for (const dateKey of Object.keys(completionsByDate)) {
-                        if (completionsByDate[dateKey]?.[id]) {
-                            const copy = { ...completionsByDate[dateKey] }
-                            delete copy[id]
-                            completionsByDate[dateKey] = copy
+            deleteHabit: (id) => {
+                set((s) => {
+                    const nextHabits = (s.habits || []).filter((h) => h.id !== id)
+
+                    // remove from all completions
+                    const nextCompletions = { ...(s.completionsByDate || {}) }
+                    for (const dayKey of Object.keys(nextCompletions)) {
+                        if (nextCompletions[dayKey]?.[id]) {
+                            const d = { ...(nextCompletions[dayKey] || {}) }
+                            delete d[id]
+                            nextCompletions[dayKey] = d
                         }
                     }
 
-                    return { habits, completionsByDate }
-                }),
+                    return { habits: nextHabits, completionsByDate: nextCompletions }
+                })
+            },
 
-            toggleHabitToday: (id) =>
-                set((state) => {
-                    const dateKey = getLocalDateKey()
-                    const day = state.completionsByDate[dateKey] || {}
-                    const isDone = !!day[id]
+            // HABITS: toggle "done today"
+            toggleHabitToday: (id) => {
+                const todayKey = getLocalDateKey()
+                set((s) => {
+                    const byDate = { ...(s.completionsByDate || {}) }
+                    const day = { ...(byDate[todayKey] || {}) }
 
-                    const nextDay = { ...day }
-                    if (isDone) delete nextDay[id]
-                    else nextDay[id] = true
+                    if (day[id]) delete day[id]
+                    else day[id] = true
 
-                    return {
-                        completionsByDate: {
-                            ...state.completionsByDate,
-                            [dateKey]: nextDay,
-                        },
-                    }
-                }),
+                    byDate[todayKey] = day
+                    return { completionsByDate: byDate }
+                })
+            },
 
-            setFilter: (filter) => set({ filter }),
-
-            // селекторы/хелперы
             isHabitDoneToday: (id) => {
-                const dateKey = getLocalDateKey()
-                const day = get().completionsByDate?.[dateKey] || {}
-                return !!day[id]
+                const todayKey = getLocalDateKey()
+                const day = get().completionsByDate?.[todayKey] || {}
+                return Boolean(day?.[id])
             },
 
-            getTodayStats: () => {
-                const dateKey = getLocalDateKey()
-                const activeHabits = get().habits.filter((h) => !h.archived)
-                const day = get().completionsByDate?.[dateKey] || {}
-                const done = activeHabits.filter((h) => !!day[h.id]).length
-                return { total: activeHabits.length, done }
-            },
-
-            getRhythm28Days: () => {
-                const activeHabits = get().habits.filter((h) => !h.archived)
-                const total = activeHabits.length
-
-                const out = []
-                for (let i = 27; i >= 0; i--) {
-                    const d = new Date()
-                    d.setDate(d.getDate() - i)
-                    const key = getLocalDateKey(d)
-                    const day = get().completionsByDate?.[key] || {}
-                    const done = activeHabits.filter((h) => !!day[h.id]).length
-                    out.push({ key, done, total })
-                }
-                return out
+            // TASKS: persistent done flag
+            toggleTaskDone: (id) => {
+                set((s) => ({
+                    habits: (s.habits || []).map((h) =>
+                        h.id === id ? { ...h, completed: !Boolean(h.completed) } : h
+                    ),
+                }))
             },
         }),
         {
-            name: 'one-live-habits',
+            name: 'habits-store-v2',
             version: 2,
-            migrate: (state) => {
+            migrate: (state, version) => {
+                // migrate older versions safely
                 const s = state || {}
+                const habits = Array.isArray(s.habits) ? s.habits : []
+                const completionsByDate = s.completionsByDate || {}
+
+                // Ensure tasks have "completed" field
+                const nextHabits = habits.map((h) => {
+                    if ((h.kind || 'habit') === 'task') {
+                        return { ...h, completed: Boolean(h.completed) }
+                    }
+                    return h
+                })
+
                 return {
-                    habits: Array.isArray(s.habits) ? s.habits : [],
-                    filter: s.filter ?? 'all',
-                    completionsByDate: s.completionsByDate ?? {},
+                    ...s,
+                    habits: nextHabits,
+                    completionsByDate,
+                    filter: s.filter || 'all',
                 }
             },
         }

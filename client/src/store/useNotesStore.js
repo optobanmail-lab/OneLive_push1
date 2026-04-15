@@ -1,163 +1,125 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-const INBOX_ID = 'inbox'
-
-function nowIso() {
-    return new Date().toISOString()
+function uid() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
-function extractTags(text) {
-    if (!text) return []
-    const tags = new Set()
-    const re = /#([A-Za-zА-Яа-яЁё0-9_/-]+)/g
-    let m
-    while ((m = re.exec(text)) !== null) {
-        tags.add(m[1].toLowerCase())
-    }
-    return Array.from(tags)
+const INBOX_FOLDER_ID = 'inbox'
+
+function ensureInbox(state) {
+    const s = state || {}
+    const folders = Array.isArray(s.folders) ? s.folders : []
+    const notes = Array.isArray(s.notes) ? s.notes : []
+
+    const hasInbox = folders.some((f) => f.id === INBOX_FOLDER_ID)
+    const nextFolders = hasInbox
+        ? folders
+        : [{ id: INBOX_FOLDER_ID, name: 'Входящие', createdAt: Date.now() }, ...folders]
+
+    // если у заметки нет папки — отправим во входящие
+    const nextNotes = notes.map((n) => ({
+        ...n,
+        folderId: n.folderId || INBOX_FOLDER_ID,
+        updatedAt: n.updatedAt || n.createdAt || Date.now(),
+        createdAt: n.createdAt || Date.now(),
+    }))
+
+    return { ...s, folders: nextFolders, notes: nextNotes }
 }
 
 const useNotesStore = create(
     persist(
         (set, get) => ({
-            folders: [
-                { id: INBOX_ID, title: 'Inbox', locked: true },
-            ],
+            folders: [{ id: INBOX_FOLDER_ID, name: 'Входящие', createdAt: Date.now() }],
             notes: [],
-            selectedFolderId: INBOX_ID,
-            selectedTag: null,
-            query: '',
 
-            // ----- folders
-            addFolder: (title) =>
-                set((state) => {
-                    const t = title.trim()
-                    if (!t) return state
-                    return {
-                        folders: [...state.folders, { id: String(Date.now()), title: t, locked: false }],
-                    }
-                }),
-
-            renameFolder: (id, title) =>
-                set((state) => ({
-                    folders: state.folders.map((f) =>
-                        f.id === id ? { ...f, title: title.trim() || f.title } : f
-                    ),
-                })),
-
-            deleteFolder: (id) =>
-                set((state) => {
-                    const folder = state.folders.find((f) => f.id === id)
-                    if (!folder || folder.locked) return state
-
-                    // удаляем папку
-                    const folders = state.folders.filter((f) => f.id !== id)
-
-                    // переносим заметки в inbox
-                    const notes = state.notes.map((n) =>
-                        n.folderId === id ? { ...n, folderId: INBOX_ID, updatedAt: nowIso() } : n
-                    )
-
-                    return {
-                        folders,
-                        notes,
-                        selectedFolderId: state.selectedFolderId === id ? INBOX_ID : state.selectedFolderId,
-                    }
-                }),
-
-            setSelectedFolderId: (id) => set({ selectedFolderId: id, selectedTag: null }),
-            setSelectedTag: (tag) => set({ selectedTag: tag, selectedFolderId: INBOX_ID }),
-            setQuery: (query) => set({ query }),
-
-            // ----- notes
-            addNote: (folderId = INBOX_ID) =>
-                set((state) => {
-                    const id = String(Date.now())
-                    const note = {
-                        id,
-                        folderId,
-                        title: '',
-                        content: '',
-                        tags: [],
-                        createdAt: nowIso(),
-                        updatedAt: nowIso(),
-                    }
-                    return { notes: [note, ...state.notes] }
-                }),
-
-            updateNote: (id, patch) =>
-                set((state) => ({
-                    notes: state.notes.map((n) => {
-                        if (n.id !== id) return n
-                        const next = {
-                            ...n,
-                            ...patch,
-                            updatedAt: nowIso(),
-                        }
-                        // пересчёт тегов по content/title
-                        const tagText = `${next.title}\n${next.content}`
-                        next.tags = extractTags(tagText)
-                        return next
-                    }),
-                })),
-
-            deleteNote: (id) =>
-                set((state) => ({
-                    notes: state.notes.filter((n) => n.id !== id),
-                })),
-
-            moveNote: (id, folderId) =>
-                set((state) => ({
-                    notes: state.notes.map((n) =>
-                        n.id === id ? { ...n, folderId, updatedAt: nowIso() } : n
-                    ),
-                })),
-
-            // ----- selectors
-            getFilteredNotes: () => {
-                const { notes, selectedFolderId, selectedTag, query } = get()
-                const q = query.trim().toLowerCase()
-
-                return notes
-                    .filter((n) => (selectedTag ? n.tags?.includes(selectedTag) : true))
-                    .filter((n) => (selectedFolderId ? n.folderId === selectedFolderId : true))
-                    .filter((n) => {
-                        if (!q) return true
-                        return (
-                            (n.title || '').toLowerCase().includes(q) ||
-                            (n.content || '').toLowerCase().includes(q)
-                        )
-                    })
-                    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+            addFolder: (name) => {
+                const clean = String(name || '').trim()
+                if (!clean) return
+                const folder = { id: uid(), name: clean, createdAt: Date.now() }
+                set((s) => ({ folders: [folder, ...(s.folders || [])] }))
+                return folder.id
             },
 
-            getAllTags: () => {
-                const tags = new Set()
-                for (const n of get().notes) {
-                    for (const t of n.tags || []) tags.add(t)
+            renameFolder: (id, name) => {
+                const clean = String(name || '').trim()
+                if (!clean) return
+                if (id === INBOX_FOLDER_ID) return
+                set((s) => ({
+                    folders: (s.folders || []).map((f) => (f.id === id ? { ...f, name: clean } : f)),
+                }))
+            },
+
+            deleteFolder: (id) => {
+                if (id === INBOX_FOLDER_ID) return
+                set((s) => {
+                    // удаляем папку, а заметки переносим во входящие
+                    const nextFolders = (s.folders || []).filter((f) => f.id !== id)
+                    const nextNotes = (s.notes || []).map((n) =>
+                        n.folderId === id ? { ...n, folderId: INBOX_FOLDER_ID, updatedAt: Date.now() } : n
+                    )
+                    return { folders: nextFolders, notes: nextNotes }
+                })
+            },
+
+            addNote: ({ folderId, title, body }) => {
+                const cleanBody = String(body || '').trim()
+                const cleanTitle = String(title || '').trim()
+
+                if (!cleanBody && !cleanTitle) return
+
+                const note = {
+                    id: uid(),
+                    folderId: folderId || INBOX_FOLDER_ID,
+                    title: cleanTitle,
+                    body: cleanBody,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
                 }
-                return Array.from(tags).sort()
+
+                set((s) => ({ notes: [note, ...(s.notes || [])] }))
+                return note.id
+            },
+
+            updateNote: (id, patch) => {
+                set((s) => ({
+                    notes: (s.notes || []).map((n) =>
+                        n.id === id
+                            ? {
+                                ...n,
+                                ...patch,
+                                title: patch?.title != null ? String(patch.title) : n.title,
+                                body: patch?.body != null ? String(patch.body) : n.body,
+                                folderId: patch?.folderId != null ? patch.folderId : n.folderId,
+                                updatedAt: Date.now(),
+                            }
+                            : n
+                    ),
+                }))
+            },
+
+            deleteNote: (id) => {
+                set((s) => ({ notes: (s.notes || []).filter((n) => n.id !== id) }))
+            },
+
+            getFolderName: (id) => {
+                const f = (get().folders || []).find((x) => x.id === id)
+                return f?.name || 'Входящие'
             },
         }),
         {
-            name: 'one-live-notes',
+            name: 'notes-store-v1',
             version: 1,
-            migrate: (state) => {
-                const s = state || {}
-                const folders = Array.isArray(s.folders) ? s.folders : []
-                const hasInbox = folders.some((f) => f.id === INBOX_ID)
-                return {
-                    ...s,
-                    folders: hasInbox ? folders : [{ id: INBOX_ID, title: 'Inbox', locked: true }, ...folders],
-                    notes: Array.isArray(s.notes) ? s.notes : [],
-                    selectedFolderId: s.selectedFolderId || INBOX_ID,
-                    selectedTag: s.selectedTag || null,
-                    query: s.query || '',
-                }
-            },
+            migrate: (state) => ensureInbox(state),
+            partialize: (s) => ({
+                folders: s.folders,
+                notes: s.notes,
+            }),
         }
     )
 )
 
 export default useNotesStore
+export { INBOX_FOLDER_ID }

@@ -1,290 +1,287 @@
-import { useEffect, useMemo, useState } from 'react'
-import { AnimatePresence, LayoutGroup, motion } from 'framer-motion'
+import { useMemo, useState, useEffect, useRef } from 'react'
 
 const KINDS = [
-    { key: 'habit', title: 'Привычка', subtitle: 'Ежедневная отметка', icon: '◉' },
-    { key: 'task', title: 'Задача', subtitle: 'Список дел', icon: '✓' },
+    { key: 'habit', title: 'Привычка' },
+    { key: 'task', title: 'Задача' },
 ]
 
-function useViewport() {
-    const [vp, setVp] = useState(() => ({
-        w: typeof window !== 'undefined' ? window.innerWidth : 390,
-        h: typeof window !== 'undefined' ? window.innerHeight : 844,
-    }))
-
-    useEffect(() => {
-        const onResize = () => setVp({ w: window.innerWidth, h: window.innerHeight })
-        window.addEventListener('resize', onResize)
-        return () => window.removeEventListener('resize', onResize)
-    }, [])
-
-    return vp
+function firstGrapheme(s) {
+    const str = (s || '').trim()
+    if (!str) return ''
+    try {
+        if (Intl?.Segmenter) {
+            const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+            return [...seg.segment(str)][0]?.segment || ''
+        }
+    } catch (_) {}
+    return Array.from(str)[0] || ''
 }
 
-function FieldLabel({ children }) {
-    return <p className="mb-2 text-xs text-muted">{children}</p>
-}
+export default function CreateItemFab({ onCreate, bottomOffsetPx = 0 }) {
+    const fabRef = useRef(null)
+    const titleRef = useRef(null)
 
-export default function CreateItemFab({ onCreate }) {
-    const { w, h } = useViewport()
+    // closed | flying | open
+    const [ui, setUi] = useState('closed')
+    const [fly, setFly] = useState({ sx: 0, sy: 0, ex: 0, ey: 0 })
 
-    const [open, setOpen] = useState(false)
-    const [step, setStep] = useState('menu') // menu | form
     const [kind, setKind] = useState('habit')
-
+    const [emoji, setEmoji] = useState('🏃')
     const [title, setTitle] = useState('')
-    const [comment, setComment] = useState('')
+    const [reminderEnabled, setReminderEnabled] = useState(false)
     const [reminderTime, setReminderTime] = useState('')
-    const [tag, setTag] = useState('')
+    const [comment, setComment] = useState('')
 
     const canSubmit = useMemo(() => title.trim().length > 0, [title])
+    const open = ui !== 'closed'
 
-    // Адаптивный размер модалки (rounded-card)
-    const sheetW = useMemo(() => Math.min(380, w - 32), [w])
-    const sheetH = useMemo(() => Math.min(520, h - 220), [h])
+    const FLY_MS = 420
+    const BURST_MS = 320
+    const OPEN_AFTER_MS = FLY_MS + 80
+
+    useEffect(() => {
+        if (!open) return
+        const prev = document.body.style.overflow
+        document.body.style.overflow = 'hidden'
+        return () => {
+            document.body.style.overflow = prev
+        }
+    }, [open])
+
+    useEffect(() => {
+        if (ui !== 'open') return
+        const id = setTimeout(() => titleRef.current?.focus?.(), 90)
+        return () => clearTimeout(id)
+    }, [ui])
+
+    const resetForm = () => {
+        setKind('habit')
+        setEmoji('🏃')
+        setTitle('')
+        setReminderEnabled(false)
+        setReminderTime('')
+        setComment('')
+    }
 
     const close = () => {
-        setOpen(false)
-        setTimeout(() => {
-            setStep('menu')
-            setKind('habit')
-            setTitle('')
-            setComment('')
-            setReminderTime('')
-            setTag('')
-        }, 200)
+        setUi('closed')
+        setTimeout(() => resetForm(), 240)
+    }
+
+    const startOpen = () => {
+        const el = fabRef.current
+        const size = 56
+        const vw = window.innerWidth
+        const vh = window.innerHeight
+
+        if (el) {
+            const r = el.getBoundingClientRect()
+            const sx = r.left + r.width / 2 - size / 2
+            const sy = r.top + r.height / 2 - size / 2
+            const ex = vw / 2 - size / 2
+            const ey = vh / 2 - size / 2 - 40
+            setFly({ sx, sy, ex, ey })
+        } else {
+            setFly({
+                sx: vw / 2 - size / 2,
+                sy: vh - 140,
+                ex: vw / 2 - size / 2,
+                ey: vh / 2 - size / 2 - 40,
+            })
+        }
+
+        setUi('flying')
+        setTimeout(() => setUi('open'), OPEN_AFTER_MS)
     }
 
     const submit = () => {
         if (!canSubmit) return
+        const cleanTitle = title.trim()
+        const e = emoji ? `${emoji} ` : ''
+
         onCreate?.({
             kind,
-            title: title.trim(),
+            title: `${e}${cleanTitle}`.trim(),
             comment: comment.trim(),
-            reminderTime: reminderTime || '',
-            tag: tag.trim(),
+            reminderTime: reminderEnabled ? (reminderTime || '') : '',
+            tag: '',
+            completed: kind === 'task' ? false : undefined,
         })
+
         close()
     }
 
+    const showOrb = ui === 'flying'
+    const showSheet = ui === 'open'
+    const fabBottom = `calc(${bottomOffsetPx}px + 22px + env(safe-area-inset-bottom))`
+
     return (
-        <LayoutGroup>
-            {/* FAB (только когда закрыто, чтобы layoutId был в 1 экземпляре) */}
+        <>
             {!open ? (
-                <motion.button
+                <button
+                    ref={fabRef}
                     type="button"
-                    onClick={() => setOpen(true)}
-                    className="fixed right-4 bottom-[calc(88px+env(safe-area-inset-bottom))] z-50"
+                    onClick={startOpen}
+                    className="fixed left-1/2 -translate-x-1/2 z-[180]"
+                    style={{ bottom: fabBottom }}
                     aria-label="create"
                 >
-                    <motion.div
-                        layoutId="onelive-create"
-                        className="press relative grid h-14 w-14 place-items-center rounded-full bg-accent text-white shadow-soft"
-                        transition={{ type: 'spring', stiffness: 700, damping: 35 }}
-                    >
+                    <div className="press grid h-14 w-14 place-items-center rounded-full bg-accent text-white shadow-soft">
                         <span className="text-2xl leading-none">+</span>
-                        <span className="pointer-events-none absolute inset-0 rounded-full bg-white/10 blur-xl opacity-40" />
-                    </motion.div>
-                </motion.button>
+                    </div>
+                </button>
             ) : null}
 
-            {/* Overlay + sheet */}
-            <AnimatePresence>
-                {open ? (
-                    <motion.div
-                        className="fixed inset-0 z-[60]"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
+            <div
+                className={['fixed inset-0 z-[220]', open ? 'pointer-events-auto' : 'pointer-events-none'].join(' ')}
+                aria-hidden={!open}
+            >
+                <button
+                    type="button"
+                    onClick={close}
+                    className={['absolute inset-0 scrim-smooth', open ? 'scrim-smooth-on' : 'scrim-smooth-off'].join(' ')}
+                    aria-label="close"
+                />
+
+                {showOrb ? (
+                    <div
+                        className="fab-fly-orb fab-fly-orb-fly-smooth"
+                        style={{
+                            '--sx': `${fly.sx}px`,
+                            '--sy': `${fly.sy}px`,
+                            '--ex': `${fly.ex}px`,
+                            '--ey': `${fly.ey}px`,
+                            '--flyMs': `${FLY_MS}ms`,
+                            '--burstMs': `${BURST_MS}ms`,
+                        }}
                     >
-                        {/* scrim */}
-                        <motion.button
-                            type="button"
-                            className="absolute inset-0 bg-black/45"
-                            onClick={close}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            aria-label="close overlay"
-                        />
+                        <div className="fab-fly-orb-inner">+</div>
+                    </div>
+                ) : null}
 
-                        {/* center wrapper */}
-                        <div className="absolute inset-0 flex items-center justify-center px-4 py-[calc(16px+env(safe-area-inset-top))]">
-                            <motion.div
-                                layoutId="onelive-create"
-                                className="relative overflow-hidden rounded-[28px] border border-border-subtle bg-surface/70 backdrop-blur-2xl shadow-soft"
-                                style={{ width: sheetW, height: sheetH }}
-                                transition={{ type: 'spring', stiffness: 520, damping: 40 }}
-                            >
-                                {/* premium highlights */}
-                                <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent" />
-                                <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-accent2/20 blur-3xl" />
-                                <div className="pointer-events-none absolute -bottom-28 left-1/3 h-72 w-72 rounded-full bg-accent/10 blur-3xl" />
+                <div className="absolute inset-x-0 bottom-0 flex justify-center px-4 pb-[calc(12px+env(safe-area-inset-bottom))]">
+                    <div className="w-full max-w-md">
+                        {showSheet ? (
+                            <div className="ios-sheet sheet-pop-smooth">
+                                <div className="ios-handle" />
 
-                                {/* content */}
-                                <div className="relative flex h-full flex-col p-5">
-                                    {/* header */}
+                                <div className="px-5 pb-5">
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="min-w-0">
-                                            <p className="text-sm font-semibold text-text">
-                                                {step === 'menu' ? 'Создать' : 'Новая запись'}
-                                            </p>
-                                            <p className="mt-1 text-xs text-muted">
-                                                {step === 'menu'
-                                                    ? 'Выбери тип'
-                                                    : kind === 'habit'
-                                                        ? 'Привычка'
-                                                        : 'Задача'}
-                                            </p>
+                                            <div className="text-[32px] leading-none font-bold text-text">
+                                                Новая {kind === 'habit' ? 'привычка' : 'задача'}
+                                            </div>
+
+                                            <div className="mt-3 flex gap-2">
+                                                {KINDS.map((k) => (
+                                                    <button
+                                                        key={k.key}
+                                                        type="button"
+                                                        onClick={() => setKind(k.key)}
+                                                        className={[
+                                                            'press rounded-full px-3 py-2 text-xs border border-border-subtle',
+                                                            kind === k.key ? 'bg-accent text-white' : 'bg-surface-elevated/55 text-text',
+                                                        ].join(' ')}
+                                                    >
+                                                        {k.title}
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </div>
 
                                         <button
                                             type="button"
                                             onClick={close}
-                                            className="press rounded-full bg-white/5 px-3 py-2 text-xs text-text"
+                                            className="press rounded-full px-3 py-2 text-xs border border-border-subtle bg-surface/75 text-text"
                                         >
                                             Закрыть
                                         </button>
                                     </div>
 
-                                    {/* body */}
-                                    <div className="mt-4 flex-1 overflow-auto hide-scrollbar pr-1">
-                                        <AnimatePresence mode="wait" initial={false}>
-                                            {step === 'menu' ? (
-                                                <motion.div
-                                                    key="menu"
-                                                    initial={{ opacity: 0, y: 8 }}
-                                                    animate={{ opacity: 1, y: 0 }}
-                                                    exit={{ opacity: 0, y: -8 }}
-                                                    transition={{ duration: 0.18, ease: 'easeOut' }}
-                                                    className="grid gap-3"
-                                                >
-                                                    {KINDS.map((k) => (
-                                                        <button
-                                                            key={k.key}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setKind(k.key)
-                                                                setStep('form')
-                                                            }}
-                                                            className="press w-full rounded-2xl bg-white/6 px-4 py-4 text-left"
-                                                        >
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/5 text-text">
-                                                                    <span className="text-lg">{k.icon}</span>
-                                                                </div>
-                                                                <div className="min-w-0">
-                                                                    <p className="text-base font-semibold text-text">
-                                                                        {k.title}
-                                                                    </p>
-                                                                    <p className="mt-1 text-sm text-muted">
-                                                                        {k.subtitle}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
-                                                        </button>
-                                                    ))}
-                                                </motion.div>
-                                            ) : (
-                                                <motion.div
-                                                    key="form"
-                                                    initial={{ opacity: 0, y: 8 }}
-                                                    animate={{ opacity: 1, y: 0 }}
-                                                    exit={{ opacity: 0, y: -8 }}
-                                                    transition={{ duration: 0.18, ease: 'easeOut' }}
-                                                    className="space-y-3"
-                                                >
-                                                    <div className="flex gap-2">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setStep('menu')}
-                                                            className="press rounded-full bg-white/5 px-3 py-2 text-xs text-text"
-                                                        >
-                                                            ← Тип
-                                                        </button>
-                                                    </div>
+                                    <div className="mt-6 space-y-3">
+                                        <div className="text-sm font-semibold text-text">
+                                            Название и значок {kind === 'habit' ? 'привычки' : 'задачи'}
+                                        </div>
 
-                                                    <div>
-                                                        <FieldLabel>Название *</FieldLabel>
-                                                        <input
-                                                            value={title}
-                                                            onChange={(e) => setTitle(e.target.value)}
-                                                            placeholder={kind === 'habit' ? 'Например: Вода' : 'Например: Сделать дз'}
-                                                            className="input-liquid"
-                                                        />
-                                                    </div>
+                                        <div className="ios-field">
+                                            <input
+                                                ref={titleRef}
+                                                value={title}
+                                                onChange={(e) => setTitle(e.target.value)}
+                                                placeholder={kind === 'habit' ? 'Название привычки' : 'Название задачи'}
+                                                className="w-full bg-transparent outline-none text-[15px] text-text"
+                                            />
 
-                                                    <div>
-                                                        <FieldLabel>Комментарий</FieldLabel>
-                                                        <input
-                                                            value={comment}
-                                                            onChange={(e) => setComment(e.target.value)}
-                                                            placeholder="Коротко (необязательно)"
-                                                            className="input-liquid"
-                                                        />
-                                                    </div>
+                                            <input
+                                                value={emoji}
+                                                onChange={(e) => setEmoji(firstGrapheme(e.target.value) || '✨')}
+                                                className="w-12 h-12 rounded-2xl text-xl text-center border border-border-subtle bg-surface/70 outline-none"
+                                                aria-label="emoji"
+                                            />
+                                        </div>
 
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        <div>
-                                                            <FieldLabel>Время</FieldLabel>
-                                                            <input
-                                                                type="time"
-                                                                value={reminderTime}
-                                                                onChange={(e) => setReminderTime(e.target.value)}
-                                                                className="input-liquid"
-                                                            />
-                                                        </div>
+                                        <div className="ios-field">
+                                            <div className="ios-field-icon">✎</div>
+                                            <input
+                                                value={comment}
+                                                onChange={(e) => setComment(e.target.value)}
+                                                placeholder="Комментарий (необязательно)"
+                                                className="w-full bg-transparent outline-none text-[15px] text-text"
+                                            />
+                                        </div>
 
-                                                        <div>
-                                                            <FieldLabel>Тег</FieldLabel>
-                                                            <input
-                                                                value={tag}
-                                                                onChange={(e) => setTag(e.target.value)}
-                                                                placeholder="#учёба"
-                                                                className="input-liquid"
-                                                            />
-                                                        </div>
-                                                    </div>
+                                        <div className="ios-field">
+                                            <div className="ios-field-icon">🔔</div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-[15px] font-semibold text-text">Ежедневное уведомление</div>
+                                                <div className="mt-1 text-xs text-muted">Пока сохраняем только время</div>
+                                            </div>
+                                            <input
+                                                type="checkbox"
+                                                checked={reminderEnabled}
+                                                onChange={(e) => setReminderEnabled(e.target.checked)}
+                                                className="h-5 w-5"
+                                            />
+                                        </div>
 
-                                                    <button
-                                                        type="button"
-                                                        onClick={submit}
-                                                        disabled={!canSubmit}
-                                                        className={`press w-full rounded-2xl py-3 text-sm font-semibold ${
-                                                            canSubmit ? 'bg-accent text-white' : 'bg-white/5 text-muted'
-                                                        }`}
-                                                    >
-                                                        Создать
-                                                    </button>
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
+                                        {reminderEnabled ? (
+                                            <div className="ios-field">
+                                                <div className="ios-field-icon">⏰</div>
+                                                <input
+                                                    type="time"
+                                                    value={reminderTime}
+                                                    onChange={(e) => setReminderTime(e.target.value)}
+                                                    className="w-full bg-transparent outline-none text-[15px] text-text"
+                                                />
+                                            </div>
+                                        ) : null}
+                                    </div>
+
+                                    <div className="mt-6">
+                                        <button
+                                            type="button"
+                                            onClick={submit}
+                                            disabled={!canSubmit}
+                                            className={[
+                                                'press w-full rounded-2xl py-4 text-sm font-semibold',
+                                                canSubmit
+                                                    ? 'bg-accent text-white'
+                                                    : 'bg-surface-elevated/50 text-muted border border-border-subtle',
+                                            ].join(' ')}
+                                        >
+                                            Сохранить
+                                        </button>
                                     </div>
 
                                     <p className="mt-3 text-center text-[11px] text-muted/80">
                                         Тап по фону — закрыть
                                     </p>
                                 </div>
-                            </motion.div>
-                        </div>
-
-                        {/* маленькая кнопка закрытия внизу справа (по желанию) */}
-                        <motion.button
-                            type="button"
-                            onClick={close}
-                            className="fixed right-4 bottom-[calc(88px+env(safe-area-inset-bottom))] z-[70]"
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.9 }}
-                            aria-label="close"
-                        >
-                            <div className="press grid h-12 w-12 place-items-center rounded-full bg-white/8 text-text backdrop-blur-xl">
-                                ×
                             </div>
-                        </motion.button>
-                    </motion.div>
-                ) : null}
-            </AnimatePresence>
-        </LayoutGroup>
+                        ) : null}
+                    </div>
+                </div>
+            </div>
+        </>
     )
 }
